@@ -380,7 +380,7 @@ class APIProviderManagerGUI:
         ttk.Button(search_frame, text="Clear", command=lambda: self.search_var.set(""), width=8).pack(side="left", padx=2)
 
         # Models list
-        models_frame = ttk.LabelFrame(content, text="Available Models (click to select)", padding=10)
+        models_frame = ttk.LabelFrame(content, text="Available Models", padding=10)
         models_frame.pack(fill="both", expand=True, pady=10)
 
         scrollbar = ttk.Scrollbar(models_frame)
@@ -394,10 +394,8 @@ class APIProviderManagerGUI:
             fg=self.fg_color,
             yscrollcommand=scrollbar.set,
             font=("Consolas", 9),
-            cursor="hand2",
         )
         self.models_text.pack(fill="both", expand=True, padx=5, pady=5)
-        self.models_text.bind("<Button-1>", self.on_model_click)
         scrollbar.config(command=self.models_text.yview)
 
         # Buttons frame
@@ -527,47 +525,22 @@ class APIProviderManagerGUI:
         except Exception as e:
             self.log(f"✗ Error: {e}")
 
-    def on_model_click(self, event):
-        """Handle model list click to select model."""
-        try:
-            index = self.models_text.index(f"@{event.x},{event.y}")
-            line_start = self.models_text.index(f"{index} linestart")
-            line_end = self.models_text.index(f"{index} lineend")
-            line_text = self.models_text.get(line_start, line_end).strip()
-
-            if not line_text or line_text.startswith(" "):
-                return
-
-            # Extract model ID from line (before " - " or end of line)
-            model_id = line_text.split(" - ")[0].strip()
-
-            # Find matching model in available_models
-            for model in self.available_models:
-                if model["id"] == model_id:
-                    self.default_model_var.set(model_id)
-                    self.log(f"Selected model: {model_id}")
-                    return
-        except Exception:
-            pass
-
     def test_connection(self):
         """Test provider connection in background thread."""
         provider_name = self.provider_var.get()
         base_url = self.base_url_var.get()
-        api_key = self.api_key_var.get().strip()
+        api_key = self.api_key_var.get()
 
         if not provider_name or not base_url:
             messagebox.showerror("Error", "Select provider and set base URL")
             return
 
-        if not api_key:
-            messagebox.showerror("Error", "Enter API key to test connection")
-            return
-
         def test():
             try:
                 self.log("Testing connection...")
-                headers = {"Authorization": f"Bearer {api_key}"}
+                headers = {}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
 
                 url = f"{base_url.rstrip('/')}/models"
                 response = requests.get(url, headers=headers, timeout=5)
@@ -586,14 +559,10 @@ class APIProviderManagerGUI:
         """Fetch available models from provider."""
         provider_name = self.provider_var.get()
         base_url = self.base_url_var.get()
-        api_key = self.api_key_var.get().strip()
+        api_key = self.api_key_var.get()
 
         if not provider_name or not base_url:
             messagebox.showerror("Error", "Select provider and set base URL")
-            return
-
-        if not api_key:
-            messagebox.showerror("Error", "Enter API key to fetch models")
             return
 
         def fetch():
@@ -601,7 +570,9 @@ class APIProviderManagerGUI:
                 self.log("Fetching models...")
                 self.models_text.delete("1.0", "end")
 
-                headers = {"Authorization": f"Bearer {api_key}"}
+                headers = {}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
 
                 url = f"{base_url.rstrip('/')}/models"
                 response = requests.get(url, headers=headers, timeout=15)
@@ -612,29 +583,21 @@ class APIProviderManagerGUI:
 
                     self.available_models = []
                     for model in models:
-                        # Handle different API response formats
-                        if isinstance(model, dict):
-                            model_id = model.get("id") or model.get("model")
-                            model_name = model.get("name", model.get("display_name", ""))
-                        else:
-                            model_id = model
-                            model_name = ""
-
+                        model_id = model.get("id") or model.get("model")
                         if model_id:
                             self.available_models.append(
                                 {
                                     "id": model_id,
-                                    "name": model_name,
-                                    "description": model.get("description", "") if isinstance(model, dict) else "",
+                                    "name": model.get("name", model_id),
+                                    "description": model.get("description", ""),
                                 }
                             )
 
                     self.update_models_display()
                     self.log(f"✓ Fetched {len(self.available_models)} models")
                 else:
-                    error_text = response.text[:150] if response.text else f"HTTP {response.status_code}"
-                    self.log(f"✗ Failed ({response.status_code}): {error_text[:80]}")
-                    self.models_text.insert("end", f"Error: {error_text}")
+                    self.log(f"✗ Failed to fetch models ({response.status_code})")
+                    self.models_text.insert("end", f"Error: HTTP {response.status_code}")
             except Exception as e:
                 self.log(f"✗ Error fetching models: {str(e)[:80]}")
                 self.models_text.insert("end", f"Error: {str(e)}")
@@ -648,7 +611,7 @@ class APIProviderManagerGUI:
 
         for model in self.available_models:
             display = f"{model['id']}"
-            if model["name"]:
+            if model["name"] != model["id"]:
                 display += f" - {model['name']}"
             if model["description"]:
                 display += f"\n  {model['description'][:60]}..."
@@ -663,15 +626,11 @@ class APIProviderManagerGUI:
 
         self.models_text.delete("1.0", "end")
 
-        filtered = [
-            m
-            for m in self.available_models
-            if search_term in m["id"].lower() or search_term in m["name"].lower()
-        ]
+        filtered = [m for m in self.available_models if search_term in m["id"].lower() or search_term in m["name"].lower()]
 
         for model in filtered:
             display = f"{model['id']}"
-            if model["name"]:
+            if model["name"] != model["id"]:
                 display += f" - {model['name']}"
             if model["description"]:
                 display += f"\n  {model['description'][:60]}..."

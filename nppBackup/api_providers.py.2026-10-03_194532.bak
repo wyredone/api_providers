@@ -554,20 +554,18 @@ class APIProviderManagerGUI:
         """Test provider connection in background thread."""
         provider_name = self.provider_var.get()
         base_url = self.base_url_var.get()
-        api_key = self.api_key_var.get().strip()
+        api_key = self.api_key_var.get()
 
         if not provider_name or not base_url:
             messagebox.showerror("Error", "Select provider and set base URL")
             return
 
-        if not api_key:
-            messagebox.showerror("Error", "Enter API key to test connection")
-            return
-
         def test():
             try:
                 self.log("Testing connection...")
-                headers = {"Authorization": f"Bearer {api_key}"}
+                headers = {}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
 
                 url = f"{base_url.rstrip('/')}/models"
                 response = requests.get(url, headers=headers, timeout=5)
@@ -586,14 +584,10 @@ class APIProviderManagerGUI:
         """Fetch available models from provider."""
         provider_name = self.provider_var.get()
         base_url = self.base_url_var.get()
-        api_key = self.api_key_var.get().strip()
+        api_key = self.api_key_var.get()
 
         if not provider_name or not base_url:
             messagebox.showerror("Error", "Select provider and set base URL")
-            return
-
-        if not api_key:
-            messagebox.showerror("Error", "Enter API key to fetch models")
             return
 
         def fetch():
@@ -601,7 +595,9 @@ class APIProviderManagerGUI:
                 self.log("Fetching models...")
                 self.models_text.delete("1.0", "end")
 
-                headers = {"Authorization": f"Bearer {api_key}"}
+                headers = {}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
 
                 url = f"{base_url.rstrip('/')}/models"
                 response = requests.get(url, headers=headers, timeout=15)
@@ -632,9 +628,9 @@ class APIProviderManagerGUI:
                     self.update_models_display()
                     self.log(f"✓ Fetched {len(self.available_models)} models")
                 else:
-                    error_text = response.text[:150] if response.text else f"HTTP {response.status_code}"
-                    self.log(f"✗ Failed ({response.status_code}): {error_text[:80]}")
-                    self.models_text.insert("end", f"Error: {error_text}")
+                    error_msg = response.text[:100] if response.text else f"HTTP {response.status_code}"
+                    self.log(f"✗ Failed to fetch models ({response.status_code})")
+                    self.models_text.insert("end", f"Error: {error_msg}")
             except Exception as e:
                 self.log(f"✗ Error fetching models: {str(e)[:80]}")
                 self.models_text.insert("end", f"Error: {str(e)}")

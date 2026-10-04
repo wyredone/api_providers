@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 import subprocess
 
 # Auto-install dependencies
@@ -232,111 +232,95 @@ class APIProviderManagerGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("API Provider Manager")
-        self.root.geometry("1000x750")
-
-        # Color theme - clean and readable
-        self.bg_color = "#f5f5f5"
-        self.fg_color = "#1a1a1a"
-        self.accent_color = "#0066cc"
-        self.border_color = "#d0d0d0"
-        self.input_bg = "#ffffff"
-        self.hover_color = "#0052a3"
-
-        self.root.configure(bg=self.bg_color)
+        self.root.geometry("900x700")
+        self.root.configure(bg="#1e1e1e")
 
         self.settings = SettingsManager()
-        self.available_models: List[Dict[str, str]] = []
         self.setup_styles()
         self.setup_ui()
         self.refresh_provider_list()
 
     def setup_styles(self):
-        """Setup light theme."""
+        """Setup dark mode theme."""
         style = ttk.Style()
         style.theme_use("clam")
 
+        bg_color = "#1e1e1e"
+        fg_color = "#e0e0e0"
+        select_color = "#0d47a1"
+
         style.configure(
             "TFrame",
-            background=self.bg_color,
+            background=bg_color,
         )
         style.configure(
             "TLabel",
-            background=self.bg_color,
-            foreground=self.fg_color,
+            background=bg_color,
+            foreground=fg_color,
         )
         style.configure(
             "TButton",
-            background=self.accent_color,
-            foreground="#ffffff",
-            borderwidth=0,
-            focuscolor="none",
+            background="#0d47a1",
+            foreground=fg_color,
         )
         style.map(
             "TButton",
-            background=[("active", self.hover_color)],
+            background=[("active", "#1565c0")],
         )
         style.configure(
             "TCombobox",
-            fieldbackground=self.input_bg,
-            background=self.input_bg,
-            foreground=self.fg_color,
+            fieldbackground="#2d2d2d",
+            background="#2d2d2d",
+            foreground=fg_color,
         )
         style.configure(
             "TEntry",
-            fieldbackground=self.input_bg,
-            background=self.input_bg,
-            foreground=self.fg_color,
+            fieldbackground="#2d2d2d",
+            background="#2d2d2d",
+            foreground=fg_color,
         )
         style.configure(
-            "TLabelframe",
-            background=self.bg_color,
-            foreground=self.fg_color,
-        )
-        style.configure(
-            "TLabelframe.Label",
-            background=self.bg_color,
-            foreground=self.fg_color,
+            "TText",
+            background="#2d2d2d",
+            foreground=fg_color,
         )
 
     def setup_ui(self):
         """Setup UI components."""
         # Header frame
         header = ttk.Frame(self.root)
-        header.pack(fill="x", padx=15, pady=15)
+        header.pack(fill="x", padx=10, pady=10)
 
-        ttk.Label(header, text="Provider:", font=("Segoe UI", 10, "bold")).pack(side="left", padx=5)
+        ttk.Label(header, text="Provider:").pack(side="left", padx=5)
         self.provider_var = tk.StringVar()
         self.provider_dropdown = ttk.Combobox(
             header,
             textvariable=self.provider_var,
             values=list(self.settings.PROVIDERS.keys()),
             state="readonly",
-            width=25,
-            font=("Segoe UI", 10),
+            width=30,
         )
         self.provider_dropdown.pack(side="left", padx=5)
         self.provider_dropdown.bind("<<ComboboxSelected>>", self.on_provider_selected)
 
         # Main content frame
         content = ttk.Frame(self.root)
-        content.pack(fill="both", expand=True, padx=15, pady=10)
+        content.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Settings frame
-        settings_frame = ttk.LabelFrame(content, text="Provider Settings", padding=15)
+        settings_frame = ttk.LabelFrame(content, text="Provider Settings")
         settings_frame.pack(fill="x", pady=10)
 
-        ttk.Label(settings_frame, text="Base URL:", font=("Segoe UI", 10)).grid(row=0, column=0, sticky="w", padx=5, pady=8)
+        ttk.Label(settings_frame, text="Base URL:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.base_url_var = tk.StringVar()
-        ttk.Entry(settings_frame, textvariable=self.base_url_var, width=55, font=("Segoe UI", 10)).grid(
-            row=0, column=1, columnspan=2, padx=5, pady=8, sticky="ew"
-        )
+        ttk.Entry(settings_frame, textvariable=self.base_url_var, width=50).grid(row=0, column=1, padx=5, pady=5)
 
-        ttk.Label(settings_frame, text="API Key:", font=("Segoe UI", 10)).grid(row=1, column=0, sticky="w", padx=5, pady=8)
+        ttk.Label(settings_frame, text="API Key:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         api_key_frame = ttk.Frame(settings_frame)
-        api_key_frame.grid(row=1, column=1, columnspan=2, padx=5, pady=8, sticky="ew")
+        api_key_frame.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
         self.api_key_var = tk.StringVar()
-        self.api_key_entry = ttk.Entry(api_key_frame, textvariable=self.api_key_var, show="•", width=48, font=("Segoe UI", 10))
+        self.api_key_entry = ttk.Entry(api_key_frame, textvariable=self.api_key_var, show="•", width=42)
         self.api_key_entry.pack(side="left", fill="x", expand=True)
 
         self.show_key_var = tk.BooleanVar()
@@ -345,102 +329,57 @@ class APIProviderManagerGUI:
             text="Show",
             variable=self.show_key_var,
             command=self.toggle_api_key_visibility,
-        ).pack(side="left", padx=8)
+        ).pack(side="left", padx=5)
 
-        # Models section
-        ttk.Label(settings_frame, text="Default Model:", font=("Segoe UI", 10)).grid(
-            row=2, column=0, sticky="w", padx=5, pady=8
-        )
-
-        model_frame = ttk.Frame(settings_frame)
-        model_frame.grid(row=2, column=1, columnspan=2, padx=5, pady=8, sticky="ew")
-
+        ttk.Label(settings_frame, text="Default Model:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.default_model_var = tk.StringVar()
-        self.model_dropdown = ttk.Combobox(
-            model_frame,
-            textvariable=self.default_model_var,
-            state="readonly",
-            width=50,
-            font=("Segoe UI", 10),
-        )
-        self.model_dropdown.pack(side="left", fill="x", expand=True, padx=(0, 5))
-
-        ttk.Button(model_frame, text="Fetch", command=self.fetch_models, width=8).pack(side="left", padx=2)
-
-        # Model search frame
-        search_frame = ttk.LabelFrame(content, text="Search Models", padding=10)
-        search_frame.pack(fill="x", pady=10)
-
-        ttk.Label(search_frame, text="Filter:", font=("Segoe UI", 9)).pack(side="left", padx=5)
-        self.search_var = tk.StringVar()
-        self.search_var.trace("w", self.filter_models)
-        search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=60, font=("Segoe UI", 10))
-        search_entry.pack(side="left", padx=5, fill="x", expand=True)
-
-        ttk.Button(search_frame, text="Clear", command=lambda: self.search_var.set(""), width=8).pack(side="left", padx=2)
-
-        # Models list
-        models_frame = ttk.LabelFrame(content, text="Available Models (click to select)", padding=10)
-        models_frame.pack(fill="both", expand=True, pady=10)
-
-        scrollbar = ttk.Scrollbar(models_frame)
-        scrollbar.pack(side="right", fill="y")
-
-        self.models_text = tk.Text(
-            models_frame,
-            height=10,
-            width=100,
-            bg=self.input_bg,
-            fg=self.fg_color,
-            yscrollcommand=scrollbar.set,
-            font=("Consolas", 9),
-            cursor="hand2",
-        )
-        self.models_text.pack(fill="both", expand=True, padx=5, pady=5)
-        self.models_text.bind("<Button-1>", self.on_model_click)
-        scrollbar.config(command=self.models_text.yview)
+        ttk.Entry(settings_frame, textvariable=self.default_model_var, width=50).grid(row=2, column=1, padx=5, pady=5)
 
         # Buttons frame
         button_frame = ttk.Frame(content)
-        button_frame.pack(fill="x", pady=12)
+        button_frame.pack(fill="x", pady=10)
 
-        ttk.Button(button_frame, text="Save", command=self.save_provider, width=12).pack(side="left", padx=3)
-        ttk.Button(button_frame, text="Test Connection", command=self.test_connection, width=16).pack(side="left", padx=3)
-        ttk.Button(button_frame, text="Delete", command=self.delete_provider, width=12).pack(side="left", padx=3)
-        ttk.Button(button_frame, text="Set as Default", command=self.set_default_provider, width=14).pack(side="left", padx=3)
+        ttk.Button(button_frame, text="Save", command=self.save_provider).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Test Connection", command=self.test_connection).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Fetch Models", command=self.fetch_models).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Delete", command=self.delete_provider).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Set as Default", command=self.set_default_provider).pack(side="left", padx=5)
 
         import_export_frame = ttk.Frame(content)
-        import_export_frame.pack(fill="x", pady=8)
+        import_export_frame.pack(fill="x", pady=10)
 
-        ttk.Button(import_export_frame, text="Import Settings", command=self.import_settings, width=16).pack(
-            side="left", padx=3
-        )
-        ttk.Button(import_export_frame, text="Export Settings", command=self.export_settings, width=16).pack(
-            side="left", padx=3
-        )
+        ttk.Button(import_export_frame, text="Import Settings", command=self.import_settings).pack(side="left", padx=5)
+        ttk.Button(import_export_frame, text="Export Settings", command=self.export_settings).pack(side="left", padx=5)
 
         # Status log
-        log_frame = ttk.LabelFrame(content, text="Status", padding=10)
-        log_frame.pack(fill="x", pady=10)
+        log_frame = ttk.LabelFrame(content, text="Status / Output")
+        log_frame.pack(fill="both", expand=True, pady=10)
 
-        self.status_var = tk.StringVar(value="Ready")
-        status_label = ttk.Label(log_frame, textvariable=self.status_var, font=("Segoe UI", 9), foreground="#2d7a3a")
-        status_label.pack(padx=5, pady=5, anchor="w")
+        scrollbar = ttk.Scrollbar(log_frame)
+        scrollbar.pack(side="right", fill="y")
+
+        self.log_text = tk.Text(
+            log_frame,
+            height=15,
+            width=80,
+            bg="#2d2d2d",
+            fg="#e0e0e0",
+            yscrollcommand=scrollbar.set,
+        )
+        self.log_text.pack(fill="both", expand=True, padx=5, pady=5)
+        scrollbar.config(command=self.log_text.yview)
 
         # Saved providers frame
-        saved_frame = ttk.Frame(content)
+        saved_frame = ttk.LabelFrame(content, text="Saved Providers")
         saved_frame.pack(fill="x", pady=10)
 
         self.saved_providers_var = tk.StringVar()
-        ttk.Label(saved_frame, textvariable=self.saved_providers_var, font=("Segoe UI", 9), foreground="#555555").pack(
-            padx=5, pady=5, anchor="w"
-        )
-
-        settings_frame.columnconfigure(1, weight=1)
+        ttk.Label(saved_frame, textvariable=self.saved_providers_var).pack(padx=5, pady=5)
 
     def log(self, message: str):
-        """Log message to status."""
-        self.status_var.set(message)
+        """Log message to output panel."""
+        self.log_text.insert("end", message + "\n")
+        self.log_text.see("end")
         self.root.update()
 
     def toggle_api_key_visibility(self):
@@ -468,10 +407,6 @@ class APIProviderManagerGUI:
             self.api_key_var.set("")
             self.default_model_var.set("")
             self.log(f"No saved settings for {provider_name}; using defaults")
-
-        self.available_models = []
-        self.model_dropdown.config(values=[])
-        self.models_text.delete("1.0", "end")
 
     def save_provider(self):
         """Save provider settings."""
@@ -527,47 +462,28 @@ class APIProviderManagerGUI:
         except Exception as e:
             self.log(f"✗ Error: {e}")
 
-    def on_model_click(self, event):
-        """Handle model list click to select model."""
-        try:
-            index = self.models_text.index(f"@{event.x},{event.y}")
-            line_start = self.models_text.index(f"{index} linestart")
-            line_end = self.models_text.index(f"{index} lineend")
-            line_text = self.models_text.get(line_start, line_end).strip()
-
-            if not line_text or line_text.startswith(" "):
-                return
-
-            # Extract model ID from line (before " - " or end of line)
-            model_id = line_text.split(" - ")[0].strip()
-
-            # Find matching model in available_models
-            for model in self.available_models:
-                if model["id"] == model_id:
-                    self.default_model_var.set(model_id)
-                    self.log(f"Selected model: {model_id}")
-                    return
-        except Exception:
-            pass
-
     def test_connection(self):
         """Test provider connection in background thread."""
         provider_name = self.provider_var.get()
         base_url = self.base_url_var.get()
-        api_key = self.api_key_var.get().strip()
+        api_key = self.api_key_var.get()
 
         if not provider_name or not base_url:
             messagebox.showerror("Error", "Select provider and set base URL")
             return
 
-        if not api_key:
-            messagebox.showerror("Error", "Enter API key to test connection")
-            return
-
         def test():
             try:
-                self.log("Testing connection...")
-                headers = {"Authorization": f"Bearer {api_key}"}
+                headers = {}
+                if api_key:
+                    if provider_name in ["OpenRouter", "OpenAI"]:
+                        headers["Authorization"] = f"Bearer {api_key}"
+                    elif provider_name == "Anthropic":
+                        headers["x-api-key"] = api_key
+                    elif provider_name == "Google Gemini":
+                        headers["x-goog-api-key"] = api_key
+                    else:
+                        headers["Authorization"] = f"Bearer {api_key}"
 
                 url = f"{base_url.rstrip('/')}/models"
                 response = requests.get(url, headers=headers, timeout=5)
@@ -575,9 +491,9 @@ class APIProviderManagerGUI:
                 if response.status_code == 200:
                     self.log(f"✓ Connection successful ({response.status_code})")
                 else:
-                    self.log(f"✗ Connection failed ({response.status_code})")
+                    self.log(f"✗ Connection failed ({response.status_code}): {response.text[:100]}")
             except Exception as e:
-                self.log(f"✗ Connection error: {str(e)[:80]}")
+                self.log(f"✗ Connection error: {e}")
 
         thread = threading.Thread(target=test, daemon=True)
         thread.start()
@@ -586,99 +502,44 @@ class APIProviderManagerGUI:
         """Fetch available models from provider."""
         provider_name = self.provider_var.get()
         base_url = self.base_url_var.get()
-        api_key = self.api_key_var.get().strip()
+        api_key = self.api_key_var.get()
 
         if not provider_name or not base_url:
             messagebox.showerror("Error", "Select provider and set base URL")
             return
 
-        if not api_key:
-            messagebox.showerror("Error", "Enter API key to fetch models")
-            return
-
         def fetch():
             try:
-                self.log("Fetching models...")
-                self.models_text.delete("1.0", "end")
-
-                headers = {"Authorization": f"Bearer {api_key}"}
+                headers = {}
+                if api_key:
+                    if provider_name in ["OpenRouter", "OpenAI"]:
+                        headers["Authorization"] = f"Bearer {api_key}"
+                    elif provider_name == "Anthropic":
+                        headers["x-api-key"] = api_key
+                    elif provider_name == "Google Gemini":
+                        headers["x-goog-api-key"] = api_key
+                    else:
+                        headers["Authorization"] = f"Bearer {api_key}"
 
                 url = f"{base_url.rstrip('/')}/models"
-                response = requests.get(url, headers=headers, timeout=15)
+                response = requests.get(url, headers=headers, timeout=10)
 
                 if response.status_code == 200:
                     data = response.json()
                     models = data.get("data", [])
-
-                    self.available_models = []
-                    for model in models:
-                        # Handle different API response formats
-                        if isinstance(model, dict):
-                            model_id = model.get("id") or model.get("model")
-                            model_name = model.get("name", model.get("display_name", ""))
-                        else:
-                            model_id = model
-                            model_name = ""
-
-                        if model_id:
-                            self.available_models.append(
-                                {
-                                    "id": model_id,
-                                    "name": model_name,
-                                    "description": model.get("description", "") if isinstance(model, dict) else "",
-                                }
-                            )
-
-                    self.update_models_display()
-                    self.log(f"✓ Fetched {len(self.available_models)} models")
+                    self.log(f"✓ Fetched {len(models)} models:")
+                    for model in models[:10]:
+                        model_id = model.get("id", model)
+                        self.log(f"  - {model_id}")
+                    if len(models) > 10:
+                        self.log(f"  ... and {len(models) - 10} more")
                 else:
-                    error_text = response.text[:150] if response.text else f"HTTP {response.status_code}"
-                    self.log(f"✗ Failed ({response.status_code}): {error_text[:80]}")
-                    self.models_text.insert("end", f"Error: {error_text}")
+                    self.log(f"✗ Failed to fetch models ({response.status_code})")
             except Exception as e:
-                self.log(f"✗ Error fetching models: {str(e)[:80]}")
-                self.models_text.insert("end", f"Error: {str(e)}")
+                self.log(f"✗ Error fetching models: {e}")
 
         thread = threading.Thread(target=fetch, daemon=True)
         thread.start()
-
-    def update_models_display(self):
-        """Update models display and dropdown."""
-        self.models_text.delete("1.0", "end")
-
-        for model in self.available_models:
-            display = f"{model['id']}"
-            if model["name"]:
-                display += f" - {model['name']}"
-            if model["description"]:
-                display += f"\n  {model['description'][:60]}..."
-            self.models_text.insert("end", display + "\n\n")
-
-        model_ids = [m["id"] for m in self.available_models]
-        self.model_dropdown.config(values=model_ids)
-
-    def filter_models(self, *args):
-        """Filter models based on search."""
-        search_term = self.search_var.get().lower()
-
-        self.models_text.delete("1.0", "end")
-
-        filtered = [
-            m
-            for m in self.available_models
-            if search_term in m["id"].lower() or search_term in m["name"].lower()
-        ]
-
-        for model in filtered:
-            display = f"{model['id']}"
-            if model["name"]:
-                display += f" - {model['name']}"
-            if model["description"]:
-                display += f"\n  {model['description'][:60]}..."
-            self.models_text.insert("end", display + "\n\n")
-
-        if search_term:
-            self.log(f"Showing {len(filtered)} of {len(self.available_models)} models")
 
     def import_settings(self):
         """Import settings from file."""
@@ -722,8 +583,8 @@ class APIProviderManagerGUI:
 
         provider_text = "Saved: "
         if saved:
-            names = [f"{'★ ' if name == default else ''}{name}" for name in saved.keys()]
-            provider_text += " | ".join(names)
+            names = [f"{'*' if name == default else ''}{name}" for name in saved.keys()]
+            provider_text += ", ".join(names)
         else:
             provider_text += "(none)"
 
@@ -737,4 +598,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main()  
