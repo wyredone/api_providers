@@ -48,6 +48,43 @@ worker threads and queues, updating widgets only from Tkinter's event loop.
 The package does not alter the host's global Tkinter theme or shortcuts.
 For Qt or other toolkits, use the same core client and write a toolkit wrapper.
 
+
+## Integration playground
+
+Run `launch.bat --demo` on Windows or `python -m api_providers --demo`.
+
+1. **Chat:** multi-turn context, streaming or complete responses, cancellation,
+   New Chat, Clear, Save Chat and Load Chat. Chat JSON contains completed text
+   conversations only, never provider credentials. Failed, empty and cancelled
+   turns are excluded from future context. Unsaved changes are checked before
+   replacing an active chat through New/Clear/Load.
+2. **Connection Status:** view the selected provider and endpoint, run an explicit
+   connection test, and reload saved profiles. No request is sent at startup.
+3. **Request Settings:** system instructions, temperature, output-token limit,
+   timeout and streaming controls. Temperature/token defaults are app-specific;
+   system instructions and timeout/streaming selection last for the session.
+4. **Activity Log:** local operation status without credentials or chat contents.
+   Timestamps use the computer's local timezone.
+
+The top bar switches saved profiles and models without opening credential
+settings. Refresh models retrieves the selected profile's available models;
+manual model IDs are also supported. AI Settings edits profiles using the shared
+panel. Switching providers retains chat history, so previous completed messages
+will be sent to the newly selected provider on the next Send. New Chat resets
+context. Generation snapshots profile/model/settings and disables switching
+until completion or cancellation. Network work runs on worker threads; queue
+results are applied by the UI event loop. Chats are explicitly saved/loaded,
+not automatically recovered after closing the window.
+
+For a host app with its own chat UI, `AIClient.generate(messages=history)` and
+`AIClient.stream(messages=history)` accept alternating user/assistant text
+messages ending in a user message. Pass system instructions separately through
+`system=`. Supplying both `prompt` and `messages` raises a configuration error;
+existing single-prompt integrations still work unchanged. The `Conversation`
+helper in `api_providers.conversation` handles committed turns and chat files.
+Full chat history is sent on every follow-up; automatic context trimming and
+provider-specific context-limit discovery are future work.
+
 ## Providers
 
 | Provider | Protocol |

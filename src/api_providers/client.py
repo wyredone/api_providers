@@ -43,13 +43,24 @@ class AIClient:
             return ConnectionResult(False, str(exc), (time.monotonic() - started) * 1000)
 
     @staticmethod
-    def _messages(prompt, system):
-        if not isinstance(prompt, str) or not prompt.strip():
-            raise AIError("Prompt cannot be empty.", "configuration")
-        return ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
+    def _messages(prompt=None, system="", messages=None):
+        from .conversation import validate_messages
+        if not isinstance(system, str):
+            raise AIError("System instructions must be text.", "configuration")
+        if messages is None:
+            if not isinstance(prompt, str) or not prompt.strip():
+                raise AIError("Prompt cannot be empty.", "configuration")
+            history = [{"role": "user", "content": prompt}]
+        else:
+            if prompt is not None:
+                raise AIError("Supply either a prompt or messages, not both.", "configuration")
+            history = validate_messages(messages)
+            if not history or history[-1]["role"] != "user":
+                raise AIError("Conversation must end with a user message.", "configuration")
+        return ([{"role": "system", "content": system}] if system else []) + history
 
-    def generate(self, prompt, *, system="", profile=None, model=None, temperature=None, max_tokens=None):
-        messages = self._messages(prompt, system)
+    def generate(self, prompt=None, *, messages=None, system="", profile=None, model=None, temperature=None, max_tokens=None):
+        messages = self._messages(prompt, system, messages)
         adapter, selected, prefs = self._resolve(profile, model)
         try:
             if not selected:
@@ -59,8 +70,8 @@ class AIClient:
         finally:
             adapter.close()
 
-    def stream(self, prompt, *, system="", profile=None, model=None, temperature=None, max_tokens=None, cancel=None):
-        messages = self._messages(prompt, system)
+    def stream(self, prompt=None, *, messages=None, system="", profile=None, model=None, temperature=None, max_tokens=None, cancel=None):
+        messages = self._messages(prompt, system, messages)
         adapter, selected, prefs = self._resolve(profile, model)
         try:
             if not selected:
