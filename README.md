@@ -1,95 +1,126 @@
-# API Provider Manager
+# API Providers 2.0
 
-A professional Tkinter-based GUI application for managing AI API provider credentials and settings on Windows.
+A reusable Python AI engine, embeddable Tkinter settings panel, and standalone
+provider manager. Configure provider credentials once; each app chooses its own
+profile and model. The engine has no GUI dependency and never installs packages
+or launches windows during import.
 
-## Features
+## Quick start (Windows)
 
-- **Multi-Provider Support**: Manage credentials for OpenRouter, OpenAI, Anthropic, Google Gemini, Ollama, Strata, and Custom providers
-- **Secure Encryption**: Windows DPAPI encryption for API keys (with fallback to base64 on non-Windows systems)
-- **Model Management**: Fetch, search, and select models from each provider
-- **Settings Persistence**: Local JSON-based configuration storage with secure file permissions
-- **Import/Export**: Backup and restore your API provider settings
-- **Connection Testing**: Verify API connectivity before use
-- **API Key Manager**: Dedicated key management with view, copy, edit notes, backup, and restore functionality
-- **Intelligent Caching**: 1-hour model cache to avoid repeated API calls
-- **Background Sync**: Auto-refresh models every 15 minutes
-- **Recently Used**: Track last 10 used models per provider
-- **Keyboard Shortcuts**: Ctrl+S (save), Ctrl+T (test), Ctrl+F (search)
-- **Light Theme UI**: Clean, professional interface with responsive layout
+1. Install Python 3.9+ with Tkinter.
+2. Run `launch.bat`. It creates a local virtual environment and installs the package.
+3. Name a profile, choose its provider, enter the endpoint and key, then save.
+4. Fetch models, select a model, and save again.
+5. Run `launch.bat --demo` to test streaming generation.
 
-## Requirements
+Alternatively: `python -m pip install -e .`, then `python -m api_providers`.
+An installed wheel also supplies `api-providers` and `api-providers-gui` launchers.
 
-- Python 3.8+
-- Windows 10/11 (or Linux/macOS with base64 fallback)
-- tkinter (usually included with Python)
-- requests library
+## Integrate into another app
 
-## Installation
+Install this package into the host app's environment, pinning its version or Git
+commit. Import `AIClient` and create it with a stable application ID such as
+`folder-wizard`. Pass that client into app features rather than putting provider
+HTTP logic into those features. The complete working host is
+[`examples/tkinter_host.py`](examples/tkinter_host.py).
 
-1. Extract all files from the zip package
-2. Install required dependencies:
-   ```bash
-   pip install requests
-   ```
+Public API:
 
-## Usage
+| Object / method | Contract |
+|---|---|
+| `AIClient(app_id, store=None, timeout=60, session=None)` | Per-app client; optional injected store and HTTP session |
+| `client.generate(prompt, system="", ...)` | Returns `AIResponse` with text, provider, model, usage and finish reason |
+| `client.stream(prompt, cancel=event, ...)` | Yields `StreamEvent` text/usage deltas and a final done event |
+| `client.list_models(profile=None)` | Returns `ModelInfo` items, including original provider metadata |
+| `client.test_connection(profile=None)` | Returns `ConnectionResult`; tests model endpoint, not billable generation |
+| `ProviderSettingsPanel(parent, client, on_saved=None)` | Embeddable `ttk.Frame`; host owns layout, theme and event loop |
+| `open_settings(parent, client, on_saved=None)` | Opens a `Toplevel`; no additional root or nested mainloop |
+| `SettingsStore(path=None, secrets=None)` | Shared profiles and isolated app preferences |
+| `register_provider(name, adapter_class, default_url="")` | Explicit adapter extension hook |
 
-Run the application:
-```bash
-python main.py
-```
+Generation accepts `profile`, `model`, `temperature`, and `max_tokens` overrides.
+A caller-supplied HTTP session belongs to the caller and is never closed by the
+client; use separate sessions for concurrent requests. The default client opens
+and closes a session per operation.
 
-### Workflow
+Keep network operations off the GUI thread. The supplied panel and demo use
+worker threads and queues, updating widgets only from Tkinter's event loop.
+The package does not alter the host's global Tkinter theme or shortcuts.
+For Qt or other toolkits, use the same core client and write a toolkit wrapper.
 
-1. **Select Provider**: Choose an API provider from the dropdown
-2. **Configure**: Enter Base URL and API Key
-3. **Fetch Models**: Click "Fetch Models" to retrieve available models
-4. **Search Models**: Use the search field to filter models
-5. **Select Model**: Click on a model in the list to select it
-6. **Save**: Click "Save" to persist your settings
-7. **Test**: Use "Test Connection" to verify your credentials
+## Providers
 
-### Key Manager
+| Provider | Protocol |
+|---|---|
+| OpenRouter, OpenAI, Google Gemini | OpenAI-compatible chat completions and model list |
+| Anthropic | Native Messages API and paginated Models API |
+| Ollama | Native `/api/chat` and `/api/tags`, optional authentication |
+| Strata | OpenAI-compatible `/v1` endpoint; default `http://127.0.0.1:8080/v1` |
+| Custom | User-supplied OpenAI-compatible endpoint |
 
-Click the **🔑 Key Manager** button to open the dedicated key management window:
+The adapters provide text generation and streaming, not every provider feature.
+Image inputs, tool execution, automatic capability filtering, model downloading,
+Strata `/v1/status` discovery, price estimation and automatic provider fallback
+are not implemented in this release. API keys are supplied by the user; this
+package does not create provider accounts or purchase API access. Available
+models depend on endpoint and account permissions. Some model families do not
+support Chat Completions or optional generation parameters; provider errors are
+returned without retrying or silently selecting another model.
 
-- **View Keys**: List all saved API keys by provider
-- **View/Copy**: View actual key value and copy to clipboard
-- **Edit Notes**: Add or edit notes for each key
-- **Export Keys**: Export all keys to encrypted JSON file
-- **Import Keys**: Import keys from backup file
-- **Backup**: Create timestamped backup of all keys
-- **Restore**: Restore keys from previous backups
-- **Search**: Search keys by provider name or notes
+## Settings and credentials
 
-### File Descriptions
+Default metadata file: `~/.api_provider_manager/profiles-v2.json`.
+Each app's profile/model preferences live under its application ID in that file.
+Profiles share endpoints and credentials. Profile changes affect every app using
+that profile; model preferences remain specific to each app.
 
-- **main.py**: Application entry point
-- **gui.py**: Tkinter GUI implementation with main window
-- **key_manager.py**: API key storage, encryption, backup, and restore functionality
-- **key_manager_gui.py**: GUI window for managing API keys
-- **api_client.py**: API communication and model fetching with latency tracking
-- **settings_manager.py**: Configuration persistence with encryption and model caching
-- **encryption.py**: Windows DPAPI encryption utilities
-- **constants.py**: Provider configurations and paths
-- **launch.bat**: Windows batch file to launch the application
+Credentials are stored with the OS-backed `keyring` library, not in JSON.
+A missing credential backend raises an explicit error. There is no base64 or
+plaintext fallback. Local endpoints without keys do not require a credential
+backend. For testing, supply a secrets object implementing `get(name)` and
+`set(name, value)`. Changing an authenticated endpoint requires re-entering its
+credential, preventing accidental reuse at a different address.
 
-## Configuration
+Writes use atomic replacement and interprocess file locks. Every operation reads
+fresh state inside the lock so independently running apps retain each other's
+changes. Corrupt metadata is reported and preserved rather than overwritten.
+Configuration import merges profiles and app preferences, preserving local keys.
+Export excludes credentials and credential references. It is not a key backup.
+The new engine logs neither authentication headers nor request contents.
 
-Settings are stored in:
-```
-~/.api_provider_manager/providers.json
-```
+Cancellation is cooperative: checked before sending and while receiving stream
+chunks. It cannot instantly interrupt a blocked socket read; the configured
+request timeout bounds that wait. It does not undo provider usage already billed.
+There are no automatic retries or paid cloud fallbacks.
 
-This directory and file are created automatically on first run.
+## Existing installations
 
-## Security Notes
+Click **Migrate old settings** to explicitly import the v1 `providers.json`.
+Migration keeps the original file, skips existing profile names, and puts decoded
+credentials in the OS credential store. Windows DPAPI credentials must be
+migrated under the original Windows user on the original machine. If migration
+fails, earlier migrated profiles remain; repeat after correcting the problem.
+The standalone manager remembers the old default provider; each host app still
+chooses its own profile. Existing legacy backups are not v2 imports.
 
-- API keys are encrypted using Windows DPAPI on Windows systems
-- On non-Windows systems, keys are base64-encoded
-- Config file permissions are set to 0o600 (read/write owner only)
-- Never commit your providers.json to version control
+The former multi-file GUI is archived under `api_providers.legacy` and can be
+opened with `python -m api_providers --legacy`. It does not write v2 profiles and
+is not the recommended host integration. Its request logger redacts credential
+headers; legacy key writes now require successful Windows DPAPI encryption.
+The former duplicate monolithic application is replaced by a compatibility
+launcher. `main.py` remains supported after installation.
 
-## License
+## Development and validation
 
-Provided as-is for managing API provider credentials.
+- Install: `python -m pip install -e .`
+- Tests: `python -m unittest discover -s tests -v`
+- Compile: `python -m compileall -q src examples`
+- Wheel: `python -m pip wheel . --no-deps -w dist`
+- Demo: `python -m api_providers --demo`
+
+Tests use fake secrets and mocked HTTP responses; no real credentials or paid
+requests are required. They cover provider payloads, streams, cancellation,
+resource closure, errors, storage isolation, exports, imports and concurrent
+writes. Live provider access and Windows credential integration should also be
+checked on the target machine. Tool Core can later supply logging and job
+conventions without becoming a mandatory dependency.

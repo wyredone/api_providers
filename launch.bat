@@ -1,37 +1,20 @@
 @echo off
-title API Provider Manager
-color 0A
-
-echo Checking Python installation...
+setlocal
+cd /d "%~dp0"
 python --version >nul 2>&1
 if errorlevel 1 (
-    color 0C
-    echo ERROR: Python is not installed or not in PATH
-    echo Please install Python from https://www.python.org/
-    echo Make sure to check "Add Python to PATH" during installation
-    pause
-    exit /b 1
+  echo Python 3.9 or newer is required.
+  pause
+  exit /b 1
 )
-
-echo Installing dependencies...
-python -m pip install requests pyperclip --quiet
-
-if errorlevel 1 (
-    color 0C
-    echo ERROR: Failed to install dependencies
-    pause
-    exit /b 1
-)
-
-echo.
-echo Launching API Provider Manager...
-echo.
-python main.py
-
-if errorlevel 1 (
-    color 0C
-    echo.
-    echo ERROR: Application failed to start
-    pause
-    exit /b 1
-)
+if not exist ".venv\Scripts\python.exe" python -m venv .venv
+if errorlevel 1 goto fail
+.venv\Scripts\python.exe -m pip install -e .
+if errorlevel 1 goto fail
+.venv\Scripts\python.exe -m api_providers %*
+if errorlevel 1 goto fail
+exit /b 0
+:fail
+ echo API Providers could not start. See the error above.
+ pause
+ exit /b 1

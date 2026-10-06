@@ -1,18 +1,20 @@
-	[build-system]
-requires = ["setuptools>=45", "wheel"]
+[build-system]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "api_providers"
-version = "1.0.0"
-description = "Centralized API provider and key management system"
+name = "api-providers"
+version = "2.0.0"
+description = "Reusable AI provider engine and embeddable Tkinter settings"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = [
-    "requests>=2.31.0",
-]
+dependencies = ["requests>=2.31", "filelock>=3.12", "keyring>=24"]
 
-[project.optional-dependencies]
-gui = [
-    "PyQt6>=6.0.0",
-]
+[project.scripts]
+api-providers = "api_providers.manager:main"
+
+[project.gui-scripts]
+api-providers-gui = "api_providers.manager:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
