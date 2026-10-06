@@ -2,6 +2,7 @@
 import queue
 import threading
 import time
+import json
 from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -10,6 +11,8 @@ from ..conversation import Conversation
 from ..types import AIError
 from ..execution import RequestOptions, RequestStats, run_request
 from . import open_settings
+from . import markdown
+from ..tasks import PRESETS, RequestDraft, load_attachment, validate_attachments, compose_prompt, preset_options
 
 
 class DemoApp(ttk.Frame):
@@ -32,6 +35,13 @@ class DemoApp(ttk.Frame):
         self.comparison_remaining = set()
         self.comparison_started = {}
         self.comparison_stats = {}
+        self.compare_results = {}
+        self.attachments = []
+        self.last_request = None
+        self.last_response = ""
+        self.formatted = tk.BooleanVar(self, value=True)
+        self.preset = tk.StringVar(self, value="Custom")
+        self.attachment_summary = tk.StringVar(self, value="No files attached.")
         self.profile = tk.StringVar(self)
         self.model = tk.StringVar(self)
         self.status = tk.StringVar(self, value="Select a saved profile and model.")
@@ -94,7 +104,9 @@ class DemoApp(ttk.Frame):
         frame.pack(fill="both", expand=True)
         text = tk.Text(frame, wrap="word", **kwargs)
         bar = ttk.Scrollbar(frame, command=text.yview)
-        text.configure(yscrollcommand=bar.set)
+        horizontal = ttk.Scrollbar(frame, orient="horizontal", command=text.xview)
+        text.configure(yscrollcommand=bar.set, xscrollcommand=horizontal.set)
+        horizontal.pack(side="bottom", fill="x")
         bar.pack(side="right", fill="y")
         text.pack(fill="both", expand=True)
         return text
@@ -110,6 +122,23 @@ class DemoApp(ttk.Frame):
         self.output.tag_configure("user", foreground="#145da0")
         self.output.tag_configure("assistant", foreground="#176b36")
         self.output.tag_configure("notice", foreground="#8a4b08")
+        markdown.configure(self.output)
+        response_controls = ttk.Frame(self.chat_tab)
+        response_controls.pack(fill="x", pady=4)
+        for title, callback in (("Copy Response", self.copy_response), ("Save Response", self.save_response),
+                                ("Retry Last Request", self.retry_request), ("Copy Code", self.copy_code)):
+            self.button(response_controls, title, callback).pack(side="left", padx=3)
+        ttk.Checkbutton(response_controls, text="Format Markdown", variable=self.formatted, command=self.rerender).pack(side="left", padx=4)
+        tasks = ttk.Frame(self.chat_tab)
+        tasks.pack(fill="x", pady=3)
+        ttk.Label(tasks, text="Task preset").pack(side="left")
+        self.preset_box = ttk.Combobox(tasks, textvariable=self.preset, values=list(PRESETS), state="readonly", width=18)
+        self.preset_box.pack(side="left", padx=5)
+        self.preset_box.bind("<<ComboboxSelected>>", self.select_preset)
+        self.button(tasks, "Attach Files", self.attach_files).pack(side="left", padx=3)
+        self.button(tasks, "Manage Files", self.manage_files).pack(side="left", padx=3)
+        self.button(tasks, "Preview Request", self.preview_request).pack(side="left", padx=3)
+        ttk.Label(self.chat_tab, textvariable=self.attachment_summary, wraplength=780).pack(fill="x")
         ttk.Label(self.chat_tab, text="Message — previous completed turns are sent with each follow-up.").pack(anchor="w", pady=(8, 2))
         self.prompt = self.text_area(self.chat_tab, height=4, width=90)
         actions = ttk.Frame(self.chat_tab)
@@ -171,7 +200,12 @@ class DemoApp(ttk.Frame):
         self.output.configure(state="disabled")
         for message in self.conversation.messages:
             self.append(message["role"].title() + ":\n", message["role"])
-            self.append(message["content"] + "\n\n")
+            if message["role"] == "assistant" and self.formatted.get():
+                self.output.configure(state="normal")
+                markdown.insert(self.output, message["content"] + "\n\n")
+                self.output.configure(state="disabled")
+            else:
+                self.append(message["content"] + "\n\n")
         self.chat_title.set(self.conversation.title)
 
     def settings(self):
@@ -231,6 +265,8 @@ class DemoApp(ttk.Frame):
             button.configure(state="disabled" if value else "normal")
         self.profile_box.configure(state="disabled" if value else "readonly")
         self.model_box.configure(state="disabled" if value else "normal")
+        if hasattr(self, "preset_box"):
+            self.preset_box.configure(state="disabled" if value else "readonly")
         if hasattr(self, "compare_profiles"):
             for box in self.compare_profiles:
                 box.configure(state="disabled" if value else "readonly")
@@ -299,43 +335,200 @@ class DemoApp(ttk.Frame):
         except AIError as exc:
             self.status.set(str(exc))
 
+    def make_draft(self):
+        profile, model = self.profile.get(), self.model.get().strip()
+        if not profile or not model:
+            raise AIError("Select a profile and model first.", "configuration")
+        return RequestDraft.create(self.conversation, self.prompt.get("1.0", "end").strip(),
+                                   self.attachments, self.request_options(), self.preset.get(), profile, model)
+
     def generate(self):
         if self.busy:
             return
         try:
-            prompt = self.prompt.get("1.0", "end").strip()
-            messages = self.conversation.request_messages(prompt)
-            options = self.request_options()
-            profile, model = self.profile.get(), self.model.get().strip()
-            if not profile or not model:
-                raise AIError("Select a profile and model first.", "configuration")
-            self.client.store.set_app_preferences(self.client.app_id, profile=profile, model=model,
-                                                  **options.preferences())
+            draft = self.make_draft()
+            self.client.store.set_app_preferences(self.client.app_id, profile=draft.profile, model=draft.model,
+                                                  **self.request_options().preferences())
         except AIError as exc:
             self.status.set(str(exc))
             return
-        self.render_chat()
+        self.start_draft(draft)
+
+    def retry_request(self):
+        if self.busy:
+            return
+        if self.last_request is None:
+            self.status.set("No request to retry in this session.")
+            return
+        self.start_draft(self.last_request)
+
+    def start_draft(self, draft):
+        self.last_request = draft
+        # Display the original context for retries without modifying saved history.
+        self.output.configure(state="normal")
+        self.output.delete("1.0", "end")
+        self.output.configure(state="disabled")
+        for message in draft.base_history:
+            self.append(message["role"].title() + ":\n", message["role"])
+            self.append(message["content"] + "\n\n")
         self.append("User:\n", "user")
-        self.append(prompt + "\n\n")
+        self.append(draft.submitted_text + "\n\n")
         self.append("Assistant:\n", "assistant")
         self.cancel.clear()
         self.set_busy(True)
         self.cancel_button.configure(state="normal")
         self.status.set("Generating...")
-        self.log("Generation started with %s context messages." % len(messages))
+        self.log("Generation started with %s context messages." % len(draft.messages))
         self.run_started = time.monotonic()
-        provider = self.client.store.list_profiles().get(profile, {}).get("provider", "")
-        self.active_stats = RequestStats(profile, model, provider)
+        provider = self.client.store.list_profiles().get(draft.profile, {}).get("provider", "")
+        self.active_stats = RequestStats(draft.profile, draft.model, provider)
         self.stats_text.set(self.format_stats(self.active_stats))
         def worker():
-            result = run_request(self.client, messages, options, profile, model, self.cancel,
+            result = run_request(self.client, draft.messages, draft.options, draft.profile, draft.model, self.cancel,
                                  on_text=lambda text: self.events.put(("text", text)),
                                  on_stats=lambda stats: self.events.put(("stats", stats)))
+            self.events.put(("response", result.text))
             if result.error:
                 self.events.put(("error", result.error))
             else:
-                self.events.put(("complete", prompt, result.text))
+                self.events.put(("complete", draft.submitted_text, result.text, draft))
         threading.Thread(target=worker, daemon=True).start()
+
+    def select_preset(self, event=None):
+        if self.busy:
+            return
+        prompts = {"Summarize": "Summarize the attached material.", "Rewrite": "Rewrite the attached text clearly.",
+                   "Classify Files": "Suggest folder categories for these files.",
+                   "Extract JSON": "Extract the important fields from the attached material as JSON.",
+                   "Explain Code": "Explain the attached code and identify potential issues."}
+        current = self.prompt.get("1.0", "end").strip()
+        if (not current or current in prompts.values()) and self.preset.get() in prompts:
+            self.prompt.delete("1.0", "end")
+            self.prompt.insert("1.0", prompts[self.preset.get()])
+        self.status.set(PRESETS[self.preset.get()] or "Custom task — uses your system instructions.")
+
+    def update_attachments(self):
+        size = sum(item.payload_bytes for item in self.attachments)
+        self.attachment_summary.set("%s files / %s UTF-8 bytes: %s" % (len(self.attachments), format(size, ","),
+                                    ", ".join(item.name for item in self.attachments)) if self.attachments else "No files attached.")
+
+    def attach_files(self):
+        if self.busy:
+            return
+        paths = filedialog.askopenfilenames(parent=self, filetypes=[("Text attachments", "*.txt *.md *.markdown *.json *.csv")])
+        if paths:
+            try:
+                incoming = [load_attachment(path) for path in paths]
+                combined = validate_attachments(self.attachments + incoming)
+                self.attachments = list(combined)
+                self.update_attachments()
+                self.status.set("Files loaded locally. Preview Request shows exactly what Send will include.")
+            except AIError as exc:
+                self.status.set(str(exc))
+
+    def manage_files(self):
+        if self.busy:
+            return
+        window = tk.Toplevel(self)
+        window.title("Attached files")
+        listing = tk.Listbox(window, width=85, height=7)
+        listing.pack(fill="both", expand=True, padx=10, pady=10)
+        def refresh():
+            listing.delete(0, "end")
+            for item in self.attachments:
+                listing.insert("end", "%s — %s bytes — %s" % (item.name, format(item.payload_bytes, ","), item.details or "Text"))
+        def remove():
+            if self.busy:
+                return
+            for index in reversed(listing.curselection()):
+                if index < len(self.attachments):
+                    del self.attachments[index]
+            refresh(); self.update_attachments()
+        def preview():
+            selected = listing.curselection()
+            if selected and selected[0] < len(self.attachments):
+                item = self.attachments[selected[0]]
+                self.preview_text("Attachment: " + item.name, item.text)
+        controls = ttk.Frame(window); controls.pack(fill="x", padx=10, pady=5)
+        ttk.Button(controls, text="Preview file", command=preview).pack(side="left", padx=4)
+        ttk.Button(controls, text="Remove selected", command=remove).pack(side="left", padx=4)
+        refresh()
+
+    def preview_text(self, title, text):
+        window = tk.Toplevel(self)
+        window.title(title)
+        widget = self.text_area(window, width=95, height=25)
+        widget.insert("1.0", text)
+        widget.configure(state="disabled")
+        return window
+
+    def preview_request(self):
+        try:
+            draft = self.make_draft()
+            payload = {"profile": draft.profile, "model": draft.model, "system": draft.options.system,
+                       "messages": draft.messages, "temperature": draft.options.temperature,
+                       "max_tokens": draft.options.max_tokens, "timeout": draft.options.timeout,
+                       "streaming": draft.options.streaming}
+            text = json.dumps(payload, indent=2, ensure_ascii=False)
+            self.preview_text("Request preview — %s context messages / %s UTF-8 bytes" %
+                              (len(draft.messages), format(len(text.encode("utf-8")), ",")), text)
+        except AIError as exc:
+            self.status.set(str(exc))
+
+    def copy_response(self, text=None):
+        value = self.last_response if text is None else text
+        if not value:
+            self.status.set("No response available.")
+            return
+        self.clipboard_clear(); self.clipboard_append(value)
+        self.status.set("Copied original response text.")
+
+    def save_response(self, text=None):
+        value = self.last_response if text is None else text
+        if not value:
+            self.status.set("No response available.")
+            return
+        path = filedialog.asksaveasfilename(parent=self, defaultextension=".md", filetypes=[("Markdown", "*.md"), ("Plain text", "*.txt")])
+        if path:
+            from pathlib import Path
+            try:
+                with Path(path).open("w", encoding="utf-8", newline="") as stream:
+                    stream.write(value)
+                self.status.set("Saved original response text.")
+            except OSError:
+                self.status.set("Could not save response file.")
+
+    def copy_code(self):
+        snippets = markdown.code_blocks(self.last_response)
+        if not snippets:
+            self.status.set("The latest response has no fenced code blocks.")
+            return
+        window = tk.Toplevel(self); window.title("Copy code block")
+        selected = tk.StringVar(window, value="1")
+        box = ttk.Combobox(window, textvariable=selected, values=[str(i + 1) for i in range(len(snippets))], state="readonly")
+        box.pack(fill="x", padx=10, pady=5)
+        preview = self.text_area(window, width=85, height=18, font="TkFixedFont")
+        def show(event=None):
+            preview.configure(state="normal"); preview.delete("1.0", "end")
+            preview.insert("1.0", snippets[int(selected.get()) - 1][1]); preview.configure(state="disabled")
+        def copy():
+            self.copy_response(snippets[int(selected.get()) - 1][1])
+        box.bind("<<ComboboxSelected>>", show)
+        ttk.Button(window, text="Copy selected code", command=copy).pack(pady=5)
+        show()
+
+    def rerender(self):
+        if not self.busy:
+            self.render_chat()
+            for index, result in self.compare_results.items():
+                self.render_comparison(index, result)
+
+    def reset_tools(self):
+        self.last_request = None
+        self.last_response = next((item["content"] for item in reversed(self.conversation.messages) if item["role"] == "assistant"), "")
+        self.attachments = []
+        self.update_attachments()
+
 
     @staticmethod
     def format_stats(stats, elapsed=None):
@@ -347,7 +540,7 @@ class DemoApp(ttk.Frame):
                    tokens(stats.prompt_tokens), tokens(stats.completion_tokens), tokens(stats.total_tokens)))
 
     def build_comparison(self):
-        ttk.Label(self.comparison_tab, text="Run sends two requests using the same prompt and Request Settings. Provider charges may apply to each. Chat history is excluded.", wraplength=780).pack(anchor="w", pady=5)
+        ttk.Label(self.comparison_tab, text="Run sends two requests with the same prompt, task preset, staged attachments and Request Settings. Charges may apply to each. Chat history is excluded.", wraplength=780).pack(anchor="w", pady=5)
         self.compare_prompt = self.text_area(self.comparison_tab, height=4, width=90)
         controls = ttk.Frame(self.comparison_tab)
         controls.pack(fill="x", pady=6)
@@ -379,7 +572,12 @@ class DemoApp(ttk.Frame):
             stats = tk.StringVar(self, value="No comparison yet.")
             self.compare_stats_vars.append(stats)
             ttk.Label(panel, textvariable=stats, wraplength=365).pack(fill="x", pady=5)
-            self.compare_outputs.append(self.text_area(panel, height=12, width=40, state="disabled"))
+            widget = self.text_area(panel, height=12, width=40, state="disabled")
+            markdown.configure(widget)
+            self.compare_outputs.append(widget)
+            tools = ttk.Frame(panel); tools.pack(fill="x", pady=3)
+            self.button(tools, "Copy", lambda i=index: self.copy_response(self.compare_results[i].text if i in self.compare_results else "")).pack(side="left", padx=3)
+            self.button(tools, "Save", lambda i=index: self.save_response(self.compare_results[i].text if i in self.compare_results else "")).pack(side="left", padx=3)
         columns.rowconfigure(0, weight=1)
 
     def compare_profile_changed(self, index):
@@ -423,7 +621,8 @@ class DemoApp(ttk.Frame):
             prompt = self.compare_prompt.get("1.0", "end").strip()
             if not prompt:
                 raise AIError("Enter a comparison prompt.", "configuration")
-            options = self.request_options()
+            options = preset_options(self.request_options(), self.preset.get())
+            prompt = compose_prompt(prompt, self.attachments)
             profiles = self.client.store.list_profiles()
             targets = [(self.compare_profile_vars[i].get(), self.compare_model_vars[i].get().strip()) for i in (0, 1)]
             if any(profile not in profiles or not model for profile, model in targets):
@@ -438,6 +637,7 @@ class DemoApp(ttk.Frame):
         self.status.set("Running two comparison requests...")
         self.log("Comparison started: two independent requests.")
         for index, (profile, model) in enumerate(targets):
+            self.compare_results.pop(index, None)
             widget = self.compare_outputs[index]
             widget.configure(state="normal")
             widget.delete("1.0", "end")
@@ -454,12 +654,23 @@ class DemoApp(ttk.Frame):
                 self.events.put(("compare_result", i, result))
             threading.Thread(target=worker, daemon=True).start()
 
+    def render_comparison(self, index, result):
+        widget = self.compare_outputs[index]
+        widget.configure(state="normal"); widget.delete("1.0", "end")
+        if self.formatted.get():
+            markdown.insert(widget, result.text)
+        else:
+            widget.insert("1.0", result.text)
+        if result.error:
+            widget.insert("end", "\n[" + result.error + "]")
+        widget.configure(state="disabled")
+
     def comparison_ready(self, index, result):
+        self.compare_results[index] = result
+        self.render_comparison(index, result)
         self.comparison_remaining.discard(index)
         self.comparison_stats[index] = result.stats
         self.compare_stats_vars[index].set(self.format_stats(result.stats))
-        if result.error:
-            self.write_comparison(index, "\n[" + result.error + "]")
         self.log("Comparison %s: %s." % ("A" if index == 0 else "B", result.stats.status))
         if not self.comparison_remaining:
             self.compare_cancel.configure(state="disabled")
@@ -486,7 +697,9 @@ class DemoApp(ttk.Frame):
             while True:
                 event = self.events.get_nowait()
                 kind = event[0]
-                if kind == "stats":
+                if kind == "response":
+                    self.last_response = event[1]
+                elif kind == "stats":
                     self.active_stats = event[1]
                     self.stats_text.set(self.format_stats(event[1]))
                 elif kind == "compare_text":
@@ -502,11 +715,24 @@ class DemoApp(ttk.Frame):
                     if self.cancel.is_set():
                         self.finish_error("Request cancelled; turn was not added to context.")
                     else:
-                        self.conversation.complete_turn(event[1], event[2])
+                        try:
+                            if len(event) > 3:
+                                event[3].commit(self.conversation, event[2])
+                            else:
+                                self.conversation.complete_turn(event[1], event[2])
+                        except AIError as exc:
+                            self.finish_error(str(exc))
+                            continue
+                        self.last_response = event[2]
                         self.dirty = True
                         self.chat_title.set(self.conversation.title)
                         self.prompt.delete("1.0", "end")
-                        self.append("\n\n")
+                        if len(event) > 3:
+                            self.render_chat()
+                            self.attachments = []
+                            self.update_attachments()
+                        else:
+                            self.append("\n\n")
                         self.set_busy(False)
                         self.cancel_button.configure(state="disabled")
                         self.status.set("Complete — %s saved conversation turns." % (len(self.conversation.messages) // 2))
@@ -545,6 +771,7 @@ class DemoApp(ttk.Frame):
             self.conversation = Conversation()
             self.dirty = False
             self.prompt.delete("1.0", "end")
+            self.reset_tools()
             self.render_chat()
             self.log("New chat started.")
 
@@ -553,6 +780,7 @@ class DemoApp(ttk.Frame):
             self.conversation.clear()
             self.dirty = True
             self.prompt.delete("1.0", "end")
+            self.reset_tools()
             self.render_chat()
             self.log("Chat history cleared.")
 
@@ -581,6 +809,7 @@ class DemoApp(ttk.Frame):
                 self.conversation = chat
                 self.dirty = False
                 self.prompt.delete("1.0", "end")
+                self.reset_tools()
                 self.render_chat()
                 self.status.set("Chat loaded; follow-ups will use this history.")
                 self.log("Chat loaded.")

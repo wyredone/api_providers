@@ -25,13 +25,14 @@ class ComparisonTests(unittest.TestCase):
         models = [Mock(), Mock()]
         models[0].get.return_value, models[1].get.return_value = "model-a", "model-b"
         app = SimpleNamespace(busy=False, client=SimpleNamespace(app_id="demo", store=store),
-                              compare_prompt=Mock(), request_options=Mock(return_value=RequestOptions()),
+                              compare_prompt=Mock(), preset=Mock(), attachments=[], compare_results={}, render_comparison=Mock(), request_options=Mock(return_value=RequestOptions()),
                               compare_profile_vars=variables, compare_model_vars=models, cancel=threading.Event(),
                               events=queue.Queue(), comparison_remaining=set(), comparison_started={}, comparison_stats={},
                               compare_outputs=[Mock(), Mock()], compare_stats_vars=[Mock(), Mock()],
                               compare_cancel=Mock(), set_busy=Mock(), status=Mock(), log=Mock(),
                               format_stats=DemoApp.format_stats, write_comparison=Mock())
         app.compare_prompt.get.return_value = "Same question"
+        app.preset.get.return_value = "Custom"
         return app
 
     def test_launch_same_prompt_two_models_without_history(self):
