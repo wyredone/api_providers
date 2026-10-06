@@ -61,10 +61,18 @@ Run `launch.bat --demo` on Windows or `python -m api_providers --demo`.
 2. **Connection Status:** view the selected provider and endpoint, run an explicit
    connection test, and reload saved profiles. No request is sent at startup.
 3. **Request Settings:** system instructions, temperature, output-token limit,
-   timeout and streaming controls. Temperature/token defaults are app-specific;
-   system instructions and timeout/streaming selection last for the session.
+   timeout and streaming controls. All five are saved under the application ID
+   with Save request preferences or when sending a chat request.
 4. **Activity Log:** local operation status without credentials or chat contents.
    Timestamps use the computer's local timezone.
+5. **Model Comparison:** select two saved profiles/model IDs, refresh either model
+   list, enter a shared prompt, and explicitly click Run Comparison (2 requests).
+   Both requests use the same system instructions and generation settings but no
+   existing chat history. Results appear side by side, with independent errors,
+   status, timing and token usage. Cancel both requests with one button. Neither
+   result is added to the main chat or changes its selected profile/model.
+   Comparison uses independent HTTP sessions, even if the host injected a session.
+   Each provider request may incur its own charge; there is no automatic comparison.
 
 The top bar switches saved profiles and models without opening credential
 settings. Refresh models retrieves the selected profile's available models;
@@ -82,6 +90,25 @@ messages ending in a user message. Pass system instructions separately through
 `system=`. Supplying both `prompt` and `messages` raises a configuration error;
 existing single-prompt integrations still work unchanged. The `Conversation`
 helper in `api_providers.conversation` handles committed turns and chat files.
+Request statistics show elapsed wall time, time to the first visible text chunk
+(streaming only), selected provider/model/profile, reported input/output/total
+counts, and completion/error/cancellation status. Elapsed timing includes setup
+and network time and is updated while waiting. First-text time is not time to the
+first network byte. Missing usage is displayed blank, not estimated as zero.
+Totals are provider-reported or a sum of reported input/output counts. Provider
+usage snapshots are merged rather than summed across stream chunks; partial
+usage on errors/cancellation may be incomplete. No price estimates are made.
+For non-streaming responses, first-text timing remains blank. These are client
+measurements and are not a benchmark of server-only inference time.
+
+The GUI-independent `api_providers.execution` module exposes `RequestOptions`,
+`RequestStats`, `RequestResult`, and `run_request` for other integrations.
+Generation settings are validated before requests; callbacks execute on the
+calling worker thread and should enqueue UI updates. An explicitly supplied
+`temperature=None` now omits temperature (provider default); leaving the argument
+out still uses the application's saved temperature. Request timeout is respected
+by the runner and cancellation remains cooperative.
+
 Full chat history is sent on every follow-up; automatic context trimming and
 provider-specific context-limit discovery are future work.
 

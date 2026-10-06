@@ -198,11 +198,11 @@ class OllamaAdapter(Adapter):
         return "/chat", {"model": model, "messages": messages, "options": options, "stream": stream}
 
     def parse_response(self, data, model):
-        usage = {"prompt_tokens": data.get("prompt_eval_count", 0), "completion_tokens": data.get("eval_count", 0)}
+        usage = {key: data[source] for key, source in (("prompt_tokens", "prompt_eval_count"), ("completion_tokens", "eval_count")) if source in data}
         return AIResponse(data["message"].get("content", ""), self.provider, data.get("model", model), usage, data.get("done_reason"))
 
     def stream_event(self, data):
-        usage = {"prompt_tokens": data.get("prompt_eval_count", 0), "completion_tokens": data.get("eval_count", 0)} if data.get("done") else {}
+        usage = {key: data[source] for key, source in (("prompt_tokens", "prompt_eval_count"), ("completion_tokens", "eval_count")) if source in data} if data.get("done") else {}
         return StreamEvent(data.get("message", {}).get("content", ""), data.get("done", False), usage)
 
 
