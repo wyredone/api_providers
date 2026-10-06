@@ -61,10 +61,18 @@ Run `launch.bat --demo` on Windows or `python -m api_providers --demo`.
 2. **Connection Status:** view the selected provider and endpoint, run an explicit
    connection test, and reload saved profiles. No request is sent at startup.
 3. **Request Settings:** system instructions, temperature, output-token limit,
-   timeout and streaming controls. Temperature/token defaults are app-specific;
-   system instructions and timeout/streaming selection last for the session.
+   timeout and streaming controls. All five are saved under the application ID
+   with Save request preferences or when sending a chat request.
 4. **Activity Log:** local operation status without credentials or chat contents.
    Timestamps use the computer's local timezone.
+5. **Model Comparison:** select two saved profiles/model IDs, refresh either model
+   list, enter a shared prompt, and explicitly click Run Comparison (2 requests).
+   Both requests use the same system instructions, selected task preset, staged
+   attachments and generation settings, but no existing chat history. Results appear side by side, with independent errors,
+   status, timing and token usage. Cancel both requests with one button. Neither
+   result is added to the main chat or changes its selected profile/model.
+   Comparison uses independent HTTP sessions, even if the host injected a session.
+   Each provider request may incur its own charge; there is no automatic comparison.
 
 The top bar switches saved profiles and models without opening credential
 settings. Refresh models retrieves the selected profile's available models;
@@ -82,6 +90,65 @@ messages ending in a user message. Pass system instructions separately through
 `system=`. Supplying both `prompt` and `messages` raises a configuration error;
 existing single-prompt integrations still work unchanged. The `Conversation`
 helper in `api_providers.conversation` handles committed turns and chat files.
+### Response tools, tasks and attachments
+
+- **Copy Response / Save Response:** copy or export the latest original response
+  as Markdown or plain text. Display formatting does not change the saved bytes
+  apart from UTF-8 encoding. Partial responses from failed/cancelled requests
+  can also be copied or saved. Comparison panels have independent Copy/Save.
+- **Retry Last Request:** repeat the latest request's original profile/model,
+  generation settings, effective system instructions, full context and staged
+  file contents. Successful retries replace the last answer instead of adding
+  a duplicate turn. Failure leaves the prior committed answer intact. Retry is
+  reset by New/Clear/Load and is not reconstructed from saved chat files.
+- **Format Markdown / Copy Code:** headings, emphasis, lists, quotes, links as
+  display text, inline code and fenced code get readable Tkinter styles. Code
+  is monospace with horizontal scrolling. Copy Code selects a fenced block and
+  copies its original content. This is a basic Markdown renderer, not a full
+  HTML renderer: no scripts, remote images, fetched links or code execution.
+- **Task preset:** Custom, Summarize, Rewrite, Classify Files, Extract JSON and
+  Explain Code. Preset instructions layer onto the user's system instructions
+  for the next request; existing custom prompt text is preserved. Extract JSON
+  requests JSON but does not yet validate generated responses or enforce a schema.
+- **Attach Files / Manage Files:** load TXT, Markdown, JSON and CSV as source text,
+  preview individual files, and remove staged files. Supports UTF-8 (optional
+  BOM) and BOM-marked UTF-16. JSON must parse; CSV reports row/column counts and
+  flags uneven rows. Binary/empty/unsupported inputs are rejected. Limits:
+  five files, 1 MiB per source file and 2 MiB combined source/decoded text.
+  Nothing is silently truncated. Legacy encodings, images, PDF, DOCX and file
+  execution are not supported. Filenames are included; absolute paths are not.
+- **Preview Request:** inspect the full logical request (effective system text,
+  conversation, attached file contents, model and controls) and UTF-8 byte count
+  before Send. It contains no API key. Files are loaded locally and sent only on
+  Send or Run Comparison. Attachment contents are JSON-escaped user-message data,
+  not system messages. Byte counts are not token estimates; provider context
+  limits may still reject large requests. Snapshotted file content is preserved
+  for retries even if the source file later changes.
+
+Successful chat sends clear staged attachments, while their submitted contents
+remain in chat history and explicitly saved chat JSON for later follow-ups.
+Failed sends keep attachments staged. Preview/Copy/Save are local actions.
+Comparison uses staged attachments without consuming or adding them to chat.
+
+Request statistics show elapsed wall time, time to the first visible text chunk
+(streaming only), selected provider/model/profile, reported input/output/total
+counts, and completion/error/cancellation status. Elapsed timing includes setup
+and network time and is updated while waiting. First-text time is not time to the
+first network byte. Missing usage is displayed blank, not estimated as zero.
+Totals are provider-reported or a sum of reported input/output counts. Provider
+usage snapshots are merged rather than summed across stream chunks; partial
+usage on errors/cancellation may be incomplete. No price estimates are made.
+For non-streaming responses, first-text timing remains blank. These are client
+measurements and are not a benchmark of server-only inference time.
+
+The GUI-independent `api_providers.execution` module exposes `RequestOptions`,
+`RequestStats`, `RequestResult`, and `run_request` for other integrations.
+Generation settings are validated before requests; callbacks execute on the
+calling worker thread and should enqueue UI updates. An explicitly supplied
+`temperature=None` now omits temperature (provider default); leaving the argument
+out still uses the application's saved temperature. Request timeout is respected
+by the runner and cancellation remains cooperative.
+
 Full chat history is sent on every follow-up; automatic context trimming and
 provider-specific context-limit discovery are future work.
 
