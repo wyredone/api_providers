@@ -46,7 +46,14 @@ class Adapter:
             status = response.status_code
             response.close()
             category = "authentication" if status in (401, 403) else "rate_limit" if status == 429 else "provider"
-            raise AIError("Provider returned HTTP %s." % status, category, status)
+            messages = {
+                400: "Provider rejected the request (HTTP 400); check model and generation settings.",
+                401: "Provider authentication failed (HTTP 401); check the profile's API key.",
+                403: "Provider access denied (HTTP 403); check account and model permissions.",
+                404: "Endpoint or model not found (HTTP 404); check base URL and model ID.",
+                429: "Provider rate limit reached (HTTP 429); wait and retry manually.",
+            }
+            raise AIError(messages.get(status, "Provider returned HTTP %s; check provider availability." % status), category, status)
         return response
 
     @staticmethod
@@ -198,11 +205,11 @@ class OllamaAdapter(Adapter):
         return "/chat", {"model": model, "messages": messages, "options": options, "stream": stream}
 
     def parse_response(self, data, model):
-        usage = {"prompt_tokens": data.get("prompt_eval_count", 0), "completion_tokens": data.get("eval_count", 0)}
+        usage = {key: data[source] for key, source in (("prompt_tokens", "prompt_eval_count"), ("completion_tokens", "eval_count")) if source in data}
         return AIResponse(data["message"].get("content", ""), self.provider, data.get("model", model), usage, data.get("done_reason"))
 
     def stream_event(self, data):
-        usage = {"prompt_tokens": data.get("prompt_eval_count", 0), "completion_tokens": data.get("eval_count", 0)} if data.get("done") else {}
+        usage = {key: data[source] for key, source in (("prompt_tokens", "prompt_eval_count"), ("completion_tokens", "eval_count")) if source in data} if data.get("done") else {}
         return StreamEvent(data.get("message", {}).get("content", ""), data.get("done", False), usage)
 
 

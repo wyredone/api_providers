@@ -5,6 +5,9 @@ from .storage import SettingsStore
 from .types import AIError, ConnectionResult
 
 
+_DEFAULT = object()
+
+
 class AIClient:
     def __init__(self, app_id="manager", store=None, timeout=60, session=None):
         self.app_id = app_id
@@ -59,24 +62,24 @@ class AIClient:
                 raise AIError("Conversation must end with a user message.", "configuration")
         return ([{"role": "system", "content": system}] if system else []) + history
 
-    def generate(self, prompt=None, *, messages=None, system="", profile=None, model=None, temperature=None, max_tokens=None):
+    def generate(self, prompt=None, *, messages=None, system="", profile=None, model=None, temperature=_DEFAULT, max_tokens=None):
         messages = self._messages(prompt, system, messages)
         adapter, selected, prefs = self._resolve(profile, model)
         try:
             if not selected:
                 raise AIError("Select a model in AI Settings.", "configuration")
-            return adapter.generate(selected, messages, temperature if temperature is not None else prefs.get("temperature"),
+            return adapter.generate(selected, messages, temperature if temperature is not _DEFAULT else prefs.get("temperature"),
                                     max_tokens if max_tokens is not None else prefs.get("max_tokens", 1024))
         finally:
             adapter.close()
 
-    def stream(self, prompt=None, *, messages=None, system="", profile=None, model=None, temperature=None, max_tokens=None, cancel=None):
+    def stream(self, prompt=None, *, messages=None, system="", profile=None, model=None, temperature=_DEFAULT, max_tokens=None, cancel=None):
         messages = self._messages(prompt, system, messages)
         adapter, selected, prefs = self._resolve(profile, model)
         try:
             if not selected:
                 raise AIError("Select a model in AI Settings.", "configuration")
-            yield from adapter.stream(selected, messages, temperature if temperature is not None else prefs.get("temperature"),
+            yield from adapter.stream(selected, messages, temperature if temperature is not _DEFAULT else prefs.get("temperature"),
                                       max_tokens if max_tokens is not None else prefs.get("max_tokens", 1024), cancel)
         finally:
             adapter.close()

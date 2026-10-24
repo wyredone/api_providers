@@ -34,6 +34,20 @@ class DemoEventTests(unittest.TestCase):
         self.assertEqual(app.conversation.messages, [])
         app.finish_error.assert_called_once()
 
+    def test_completed_retry_replaces_without_duplicate_turn(self):
+        from api_providers.tasks import RequestDraft
+        from api_providers.execution import RequestOptions
+        app = self.harness()
+        draft = RequestDraft.create(app.conversation, "Hi", [], RequestOptions(), "Custom", "p", "m")
+        draft.commit(app.conversation, "First answer")
+        app.render_chat, app.update_attachments = Mock(), Mock()
+        app.attachments = []
+        app.events.put(("complete", "Hi", "Better answer", draft))
+        DemoApp.poll(app)
+        self.assertEqual(len(app.conversation.messages), 2)
+        self.assertEqual(app.conversation.messages[-1]["content"], "Better answer")
+        app.render_chat.assert_called_once()
+
     def test_failed_turn_excluded(self):
         app = self.harness()
         app.events.put(("error", "Provider error"))

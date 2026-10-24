@@ -88,12 +88,16 @@ class SettingsStore:
         return profile
 
     def set_app_preferences(self, app_id, **values):
-        allowed = {"profile", "model", "temperature", "max_tokens"}
+        allowed = {"profile", "model", "temperature", "max_tokens", "system", "timeout", "streaming"}
         if set(values) - allowed:
             raise AIError("Unsupported application preference.", "configuration")
         with self.lock:
             data = self._read()
-            data["apps"].setdefault(app_id, {}).update(values)
+            from .execution import RequestOptions
+            prefs = dict(data["apps"].get(app_id, {}))
+            prefs.update(values)
+            RequestOptions.from_preferences(prefs)
+            data["apps"][app_id] = prefs
             self._write(data)
 
     def app_preferences(self, app_id):
@@ -124,7 +128,9 @@ class SettingsStore:
             for name, prefs in incoming["apps"].items():
                 if not isinstance(name, str) or not isinstance(prefs, dict):
                     raise ValueError()
-                apps[name] = {k: v for k, v in prefs.items() if k in {"profile", "model", "temperature", "max_tokens"}}
+                from .execution import RequestOptions
+                RequestOptions.from_preferences(prefs)
+                apps[name] = {k: v for k, v in prefs.items() if k in {"profile", "model", "temperature", "max_tokens", "system", "timeout", "streaming"}}
         except (ValueError, TypeError, AttributeError, OSError) as exc:
             raise AIError("Invalid settings import; no changes made.", "configuration") from exc
         with self.lock:
