@@ -4,14 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "api-providers"
-version = "2.0.0"
+version = "2.1.0"
 description = "Reusable AI provider engine and embeddable Tkinter settings"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = ["requests>=2.31", "filelock>=3.12", "keyring>=24"]
 
+[project.optional-dependencies]
+service = ["fastapi>=0.100", "uvicorn>=0.23", "pydantic>=2"]
+dev = ["pytest>=7"]
+
 [project.scripts]
 api-providers = "api_providers.manager:main"
+api-providers-service = "api_providers.service:main"
 
 [project.gui-scripts]
 api-providers-gui = "api_providers.manager:main"
